@@ -6,6 +6,7 @@ using ModelContextProtocol.Server;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton<DatabaseInspector>();
+builder.Services.AddSingleton<InventoryDashboardVerifier>();
 
 builder.Services
     .AddMcpServer()
