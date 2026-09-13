@@ -29,3 +29,12 @@ public sealed record QueryResult(
     IReadOnlyList<Dictionary<string, object?>> Rows,
     int ReturnedRows,
     bool Truncated);
+
+public sealed record InventoryDashboardValueResult(
+    int UserId,
+    bool CanViewStockValue,
+    decimal InventoryValue,
+    int TrackedItems,
+    int PositiveStockRows,
+    int AccessibleWarehouses,
+    long StockTableRows);
