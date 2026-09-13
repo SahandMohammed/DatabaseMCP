@@ -95,11 +95,36 @@ public sealed class DatabaseTools
 
     [McpServerTool]
     [Description(
-        "Reproduces the Inventory Dashboard inventory-value calculation " +
-        "for one DreamItERP user using the current StockTable snapshot. " +
-        "This tool is read-only and does not execute GetStockTable. " +
-        "Open the Inventory Dashboard immediately before calling it so the " +
-        "application refreshes StockTable first.")]
+        "Executes one EXEC or EXECUTE statement against DreamItERP. " +
+        "Stored procedures may modify DreamItERP data. Cross-database, " +
+        "dynamic-SQL and linked-server execution remain blocked.")]
+    public static async Task<string> ExecuteDatabaseCommand(
+        DatabaseExecutor executor,
+
+        [Description(
+            "A single SQL Server EXEC or EXECUTE statement, for example EXEC GetStockTable")]
+        string sql,
+
+        CancellationToken cancellationToken = default)
+    {
+        int rowsAffected =
+            await executor.ExecuteAsync(
+                sql,
+                cancellationToken);
+
+        return JsonSerializer.Serialize(
+            new
+            {
+                success = true,
+                rowsAffected
+            },
+            JsonOptions);
+    }
+
+    [McpServerTool]
+    [Description(
+        "Refreshes StockTable with GetStockTable and then reproduces the " +
+        "Inventory Dashboard inventory-value calculation for one DreamItERP user.")]
     public static async Task<string> GetInventoryDashboardValue(
         InventoryDashboardVerifier verifier,
 
@@ -123,7 +148,7 @@ public sealed class DatabaseTools
     [Description(
         "Executes one read-only SELECT or WITH query against " +
         "the DreamItERP SQL Server database. " +
-        "Never use this tool to modify database data or schema.")]
+        "Use execute_database_command for stored procedures.")]
     public static async Task<string> QueryDatabase(
         DatabaseInspector database,
 
