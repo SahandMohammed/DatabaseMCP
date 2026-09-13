@@ -95,6 +95,32 @@ public sealed class DatabaseTools
 
     [McpServerTool]
     [Description(
+        "Reproduces the Inventory Dashboard inventory-value calculation " +
+        "for one DreamItERP user using the current StockTable snapshot. " +
+        "This tool is read-only and does not execute GetStockTable. " +
+        "Open the Inventory Dashboard immediately before calling it so the " +
+        "application refreshes StockTable first.")]
+    public static async Task<string> GetInventoryDashboardValue(
+        InventoryDashboardVerifier verifier,
+
+        [Description(
+            "DreamItERP UserTable.id for the user whose dashboard is being verified")]
+        int userId,
+
+        CancellationToken cancellationToken = default)
+    {
+        var result =
+            await verifier.GetValueAsync(
+                userId,
+                cancellationToken);
+
+        return JsonSerializer.Serialize(
+            result,
+            JsonOptions);
+    }
+
+    [McpServerTool]
+    [Description(
         "Executes one read-only SELECT or WITH query against " +
         "the DreamItERP SQL Server database. " +
         "Never use this tool to modify database data or schema.")]
