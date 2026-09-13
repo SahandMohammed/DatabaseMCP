@@ -45,9 +45,17 @@ public sealed class InventoryDashboardVerifier
                 $"Database MCP is restricted to '{AllowedDatabase}'.");
         }
 
-        // This intentionally does not execute GetStockTable. The MCP remains
-        // read-only. Open the Inventory Dashboard immediately before calling
-        // this tool so StockTable is refreshed by the application itself.
+        // Match the real Inventory Dashboard behavior exactly: refresh
+        // StockTable first, then calculate inventory value from that snapshot.
+        await using (var refresh = new SqlCommand("GetStockTable", connection)
+        {
+            CommandType = CommandType.StoredProcedure,
+            CommandTimeout = 600
+        })
+        {
+            await refresh.ExecuteNonQueryAsync(ct);
+        }
+
         const string sql = """
 ;WITH StockRows AS
 (
