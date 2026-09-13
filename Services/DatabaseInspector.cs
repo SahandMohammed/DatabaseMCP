@@ -7,6 +7,8 @@ namespace DreamItERP.DatabaseMcp.Services;
 
 public sealed class DatabaseInspector
 {
+    private const string AllowedDatabase = "DreamItERP";
+
     private readonly string _connectionString;
 
     private static readonly Regex ForbiddenSql = new(
@@ -28,11 +30,54 @@ public sealed class DatabaseInspector
             BACKUP|
             RESTORE|
             BULK|
+            OPENQUERY|
             OPENROWSET|
             OPENDATASOURCE|
             WAITFOR|
             USE
         )\b",
+        RegexOptions.IgnoreCase |
+        RegexOptions.IgnorePatternWhitespace |
+        RegexOptions.Compiled);
+
+    private static readonly Regex CrossDatabaseObject = new(
+        """
+        (?:
+            \[[^\]]+\] |
+            "[^"]+" |
+            [A-Za-z_#@][A-Za-z0-9_$#@]*
+        )
+        \s*\.\s*
+        (?:
+            \[[^\]]+\] |
+            "[^"]+" |
+            [A-Za-z_#@][A-Za-z0-9_$#@]*
+        )
+        \s*\.\s*
+        (?:
+            \[[^\]]+\] |
+            "[^"]+" |
+            [A-Za-z_#@][A-Za-z0-9_$#@]*
+        )
+        """,
+        RegexOptions.IgnoreCase |
+        RegexOptions.IgnorePatternWhitespace |
+        RegexOptions.Compiled);
+
+    private static readonly Regex CrossDatabaseShorthand = new(
+        """
+        (?:
+            \[[^\]]+\] |
+            "[^"]+" |
+            [A-Za-z_#@][A-Za-z0-9_$#@]*
+        )
+        \s*\.\s*\.\s*
+        (?:
+            \[[^\]]+\] |
+            "[^"]+" |
+            [A-Za-z_#@][A-Za-z0-9_$#@]*
+        )
+        """,
         RegexOptions.IgnoreCase |
         RegexOptions.IgnorePatternWhitespace |
         RegexOptions.Compiled);
@@ -43,16 +88,52 @@ public sealed class DatabaseInspector
             configuration.GetConnectionString("Database")
             ?? throw new InvalidOperationException(
                 "ConnectionStrings:Database is not configured.");
+
+        var connectionString = new SqlConnectionStringBuilder(_connectionString);
+
+        if (!string.Equals(
+                connectionString.InitialCatalog,
+                AllowedDatabase,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Database MCP is restricted to '{AllowedDatabase}'. " +
+                $"ConnectionStrings:Database must explicitly target that database.");
+        }
     }
 
-    private SqlConnection CreateConnection()
-        => new(_connectionString);
+    private async Task<SqlConnection> OpenConnectionAsync(
+        CancellationToken ct)
+    {
+        var connection = new SqlConnection(_connectionString);
+
+        try
+        {
+            await connection.OpenAsync(ct);
+
+            if (!string.Equals(
+                    connection.Database,
+                    AllowedDatabase,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"Database MCP is restricted to '{AllowedDatabase}', " +
+                    $"but the SQL connection opened database '{connection.Database}'.");
+            }
+
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
 
     public async Task<DatabaseInfo> GetDatabaseInfoAsync(
         CancellationToken ct)
     {
-        await using var connection = CreateConnection();
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
 
         const string sql = """
 SELECT
@@ -78,8 +159,7 @@ SELECT
     public async Task<IReadOnlyList<TableInfo>> ListTablesAsync(
         CancellationToken ct)
     {
-        await using var connection = CreateConnection();
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
 
         const string sql = """
 SELECT
@@ -119,8 +199,7 @@ ORDER BY s.name, t.name;
         string table,
         CancellationToken ct)
     {
-        await using var connection = CreateConnection();
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
 
         const string sql = """
 SELECT
@@ -189,8 +268,7 @@ ORDER BY c.column_id;
         string table,
         CancellationToken ct)
     {
-        await using var connection = CreateConnection();
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
 
         const string sql = """
 SELECT
@@ -263,8 +341,7 @@ ORDER BY i.name;
 
         maxRows = Math.Clamp(maxRows, 1, 500);
 
-        await using var connection = CreateConnection();
-        await connection.OpenAsync(ct);
+        await using var connection = await OpenConnectionAsync(ct);
 
         await using var command =
             new SqlCommand(sql, connection)
@@ -346,6 +423,14 @@ ORDER BY i.name;
         if (!validStart)
             throw new InvalidOperationException(
                 "Only SELECT or WITH queries are allowed.");
+
+        if (CrossDatabaseObject.IsMatch(normalized) ||
+            CrossDatabaseShorthand.IsMatch(normalized))
+        {
+            throw new InvalidOperationException(
+                $"Cross-database queries are not allowed. " +
+                $"This MCP is restricted to '{AllowedDatabase}'.");
+        }
 
         if (ForbiddenSql.IsMatch(normalized))
             throw new InvalidOperationException(
